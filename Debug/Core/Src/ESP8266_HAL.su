@@ -1,0 +1,5 @@
+../Core/Src/ESP8266_HAL.c:43:6:ESP_Clear_Buffer	8	static
+../Core/Src/ESP8266_HAL.c:51:6:ESP_Init	10024	static
+../Core/Src/ESP8266_HAL.c:172:5:Server_Send	104	static
+../Core/Src/ESP8266_HAL.c:187:6:Server_Handle	1040	static
+../Core/Src/ESP8266_HAL.c:216:6:Server_Start	80	static
