@@ -1,5 +1,6 @@
-../Core/Src/ESP8266_HAL.c:43:6:ESP_Clear_Buffer	8	static
-../Core/Src/ESP8266_HAL.c:51:6:ESP_Init	10024	static
-../Core/Src/ESP8266_HAL.c:172:5:Server_Send	104	static
-../Core/Src/ESP8266_HAL.c:187:6:Server_Handle	1040	static
-../Core/Src/ESP8266_HAL.c:216:6:Server_Start	80	static
+../Core/Src/ESP8266_HAL.c:21:6:ESP_Clear_Buffer	8	static
+../Core/Src/ESP8266_HAL.c:28:6:ESP_Init	10024	static
+../Core/Src/ESP8266_HAL.c:152:5:Server_Send	104	static
+../Core/Src/ESP8266_HAL.c:167:5:check_recv_swing	24	static
+../Core/Src/ESP8266_HAL.c:190:5:check_recv_backdraft	24	static
+../Core/Src/ESP8266_HAL.c:211:6:Server_Start	272	static

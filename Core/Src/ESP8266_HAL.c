@@ -103,6 +103,9 @@ void ESP_Init (char *SSID, char *PASSWD){
 	Uart_sendstring("\r\n-(완료) 333포트 번호를 열었습니다!\r\n", pc_uart);
 	ESP_Clear_Buffer();
 
+
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);
+
 	/********* AT+CIPSTART : 외부 서버 TCP에 연결하기 **********/
 	//HAL_UART_Transmit(wifi_uart, (uint8_t*)"AT+CIPSTART=0,\"TCP\",\"58.227.202.87\",9999,30\r\n", strlen("AT+CIPSTART=0,\"TCP\",\"192.168.45.179\",23,30\r\n"), 100);
 	//while (!(Wait_for("OK", wifi_uart)));
@@ -149,7 +152,7 @@ void ESP_Init (char *SSID, char *PASSWD){
 int Server_Send (char *str, int Link_ID)
 {
 	int len = strlen (str);
-	char data[80];
+	char data[80] = {};
 	sprintf (data, "AT+CIPSEND=%d,%d\r\n", Link_ID, len);
 	Uart_sendstring(data, wifi_uart);
 	while (!(Wait_for(">", wifi_uart)));
@@ -161,31 +164,211 @@ int Server_Send (char *str, int Link_ID)
 	return 1;
 }
 
-void Server_Start (void)
-{
-	char buftocopyinto[64] = {0};
-	char Link_ID;
+int check_recv_brup(int milli_time){
+	uint8_t received_data;
+	if (HAL_UART_Receive(wifi_uart, &received_data, 1, milli_time) == HAL_OK) {
+		Uart_sendstring("- 다른 데이터가 수신되었습니다. 트름 유도 기능을 종료하고, 다른 기능을 수행합니다.\r\n", pc_uart);
+		ESP_Clear_Buffer();
+
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
+
+		// 데이터가 들어왔을 경우 break
+		return 1;
+	}
+	return 0;
+}
+
+int check_recv_swing(int milli_time){
+	uint8_t received_data;
+	if (HAL_UART_Receive(wifi_uart, &received_data, 1, milli_time) == HAL_OK) {
+		Uart_sendstring("- 다른 데이터가 수신되었습니다. 스윙 기능을 종료하고, 다른 기능을 수행합니다.\r\n", pc_uart);
+		ESP_Clear_Buffer();
+
+		// 보드 LED
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_RESET);
+
+		// 스윙 기능
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_RESET);
+
+		Uart_sendstring("%s\r\n", received_data);
+		ESP_Clear_Buffer();
+
+		// 데이터가 들어왔을 경우 break
+		return 1;
+	}
+	return 0;
+}
+
+int check_recv_backdraft(int milli_time){
+	uint8_t received_data;
+	if (HAL_UART_Receive(wifi_uart, &received_data, 1, milli_time) == HAL_OK) {
+		Uart_sendstring("- 다른 데이터가 수신되었습니다. 역류 방지 기능을 종료하고, 다른 기능을 수행합니다.\r\n", pc_uart);
+		ESP_Clear_Buffer();
+
+
+		// 역류 방지 기능 요청 내리기
+		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_6, GPIO_PIN_RESET);
+		HAL_Delay(14000);
+		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, GPIO_PIN_RESET);
+
+		Uart_sendstring("%s\r\n", received_data);
+		ESP_Clear_Buffer();
+
+		// 데이터가 들어왔을 경우 break
+		return 1;
+	}
+	return 0;
+}
+void Server_Start (void){
+	char buftocopyinto[255] = {0};
+	char Link_ID = 0;
 	while (!(Get_after("+IPD,", 1, &Link_ID, wifi_uart)));
 	Link_ID -= 48;
 	while (!(Copy_upto(" HTTP", buftocopyinto, wifi_uart)));
-	if (Look_for("GET /ledon", buftocopyinto) == 1)
-	{
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, 1);
-		Uart_sendstring("- LED가 켜졌습니다.\r\n", pc_uart);
+	if (Look_for("GET /backdraft/on", buftocopyinto) == 1){
+		Uart_sendstring("- 역류방지를 위해 침대를 기울입니다.\r\n", pc_uart);
+		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_6, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, GPIO_PIN_RESET);
+		if(check_recv_backdraft(14000)){
+			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_6, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, GPIO_PIN_SET);
+		}
+		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_6, GPIO_PIN_RESET);
+		Uart_sendstring("- [완료] 역류방지를 위해 침대를 기울입니다.\r\n", pc_uart);
 		ESP_Clear_Buffer();
+		Server_Send("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-type: application/json\r\nDate: Mon, 20 Aug 2018 07:59:05 GMT\r\nConnection: close\r\n\r\n", Link_ID);
+	}
+	else if (Look_for("GET /backdraft/off", buftocopyinto) == 1){
+		Uart_sendstring("- 역류방지 완료 후 침대를 내립니다.\r\n", pc_uart);
+		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_6, GPIO_PIN_RESET);
+		HAL_Delay(14000);
+		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, GPIO_PIN_RESET);
+		Uart_sendstring("- [완료] 역류방지 완료 후 침대를 내립니다.\r\n", pc_uart);
+		ESP_Clear_Buffer();
+		Server_Send("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-type: application/json\r\nDate: Mon, 20 Aug 2018 07:59:05 GMT\r\nConnection: close\r\n\r\n", Link_ID);
+	}
+	else if (Look_for("GET /swing/on", buftocopyinto) == 1){
+		Uart_sendstring("- 스윙 기능을 실행합니다.\r\n", pc_uart);
+		ESP_Clear_Buffer();
+		Server_Send("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-type: application/json\r\nDate: Mon, 20 Aug 2018 07:59:05 GMT\r\nConnection: close\r\n\r\n", Link_ID);
+		HAL_Delay(1000);
 
+		while(1){
+			ESP_Clear_Buffer();
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET); // 보드 내 LED
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET); // 스윙 기능
+			if(check_recv_swing(500)){
+				break;
+			}
+
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET); // 보드 내 LEDㄴ
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET); // 스윙 기능
+			if(check_recv_swing(300)){
+				break;
+			}
+
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET); // 보드 내 LED
+			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_SET); // 스윙 기능
+			if(check_recv_swing(500)){
+				break;
+			}
+
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_RESET); // 보드 내 LED
+			HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_RESET); // 스윙 기능
+			if(check_recv_swing(300)){
+				break;
+			}
+		}
+	}
+	else if (Look_for("GET /brup/on", buftocopyinto) == 1){
+		while(1){
+			int x;
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+			for(x=0; x<100; x=x+1){
+				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);
+				microDelay(1000);
+				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
+				microDelay(1000);
+			}
+			if(check_recv_brup(500)){
+				break;
+			}
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+			for(x=0; x<100; x=x+1)
+			{
+				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);
+				microDelay(stepDelay);
+				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
+				microDelay(stepDelay);
+			}
+			if(check_recv_brup(500)){
+				break;
+			}
+
+		}
+	}
+	else if (Look_for("GET /done", buftocopyinto) == 1){
+		Uart_sendstring("- 현재 실행 중인 기능이 없어 종료가 불가능 합니다.\r\n", pc_uart);
+		ESP_Clear_Buffer();
 		Server_Send("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-type: application/json\r\nDate: Mon, 20 Aug 2018 07:59:05 GMT\r\nConnection: close\r\n\r\n", Link_ID);
 	}
 
-	else if (Look_for("GET /ledoff", buftocopyinto) == 1)
-	{
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, 0);
-		Uart_sendstring("- LED가 꺼졌습니다.\r\n", pc_uart);
-		ESP_Clear_Buffer();
 
+	//HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_SET);
+	//	       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
+	//	       HAL_UART_Receive_IT(&huart2, &received_data, 1);
+	////	       HAL_Delay(500);
+	//	       if(check_recv(500)){
+	//	    	   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+	//	    	   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_RESET);
+	//	    	   break;
+	//	       }
+	//
+	//	       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+	//	       HAL_UART_Receive_IT(&huart2, &received_data, 1);
+	////	       HAL_Delay(300);
+	//
+	//	       if(check_recv(300)){
+	//	    	   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+	//	    	   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_RESET);
+	//	    	   break;
+	//	       }
+	//
+	//
+	//	       HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_SET);
+	//	       HAL_UART_Receive_IT(&huart2, &received_data, 1);
+	////	       HAL_Delay(500);
+	//	       if(check_recv(500)){
+	//	    	   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+	//	    	   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_RESET);
+	//	    	   break;
+	//	       }
+	//
+	//	       HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_RESET);
+	//	       HAL_UART_Receive_IT(&huart2, &received_data, 1);
+	////	       HAL_Delay(300);
+	//	       if(check_recv(300)){
+	//	    	   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+	//	    	   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_RESET);
+	//	    	   break;
+	//	       }
+	//	    }
+
+	else if (Look_for("GET /swing/off", buftocopyinto) == 1){
+		Uart_sendstring("- 스윙 기능을 멈춥니다.\r\n", pc_uart);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_4, GPIO_PIN_RESET);
+		ESP_Clear_Buffer();
 		Server_Send("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-type: application/json\r\nDate: Mon, 20 Aug 2018 07:59:05 GMT\r\nConnection: close\r\n\r\n", Link_ID);
 	}
 }
+
+
 
 
 /*
@@ -217,4 +400,4 @@ void Server_Handle (char *str, int Link_ID)
 	}
 
 }
-*/
+ */
